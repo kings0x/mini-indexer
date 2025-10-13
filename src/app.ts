@@ -12,6 +12,7 @@ import {
     MAX_RANGE_SIZE,
     START_BLOCK_BACKOFF,
     BATCH_BLOCKS,
+    POLL_INTERVAL_MS,
 } from "./config/env";
 import { eventNames } from "process";
 import { bigint, json, set, unknown } from "zod";
@@ -35,6 +36,9 @@ const publicClient = createPublicClient({
 const prisma = new PrismaClient();
 
 const STREAM = STREAM_KEY;
+
+const CONFIRMATIONS= 12;
+
 
 //function for creating unique event id to prevent duplicates
 function makeEventId(txHash: string, logIndex: number) {
@@ -148,7 +152,7 @@ async function updateOrderFromEvent({orderHash, txHash, blockNumber, logIndex, s
     return orderHash;
 }
 
-async function markOrderAsConfirmed(confirmationCutoffBlock: number) {
+async function markOrdersAsConfirmed(confirmationCutoffBlock: number) {
     const checkUnconfirmedOrders = await prisma.order.updateMany({
         where:{
             isConfirmed: false,
@@ -543,3 +547,94 @@ function connectWs(){
     });
 }
 
+//polling logic, incase of websocket failure
+async function pollerLoop(){
+    while(running){
+        try{
+            const latestBlock = Number(await publicClient.getBlockNumber());
+            let lastBlock = await getLastProcessedBlock();
+
+            if(lastBlock == null){
+                lastBlock = Math.max(0, latestBlock - START_BLOCK_BACKOFF);
+                await setLastProcessedBlock(lastBlock);
+            }
+
+            if(latestBlock > lastBlock){
+                const to = Math.min(lastBlock + BATCH_BLOCKS, latestBlock);
+                await processBlockRange(lastBlock + 1, to);
+
+                for(let i = lastBlock + 1; i <= to; i++){
+                    const block = await publicClient.getBlock({
+                        blockNumber: BigInt(i) 
+                    });
+
+                    if (block) await storeProcessedBlockDetails(Number(block.number), block.hash);
+                }
+                lastBlock = to;
+                await setLastProcessedBlock(lastBlock);
+                break
+                
+            }
+            else{
+                const confirmCutoff = latestBlock - CONFIRMATIONS;
+                if(confirmCutoff >= 0) await markOrdersAsConfirmed(confirmCutoff);
+                //detect reorgs
+                const checkFrom = Math.max(0, lastBlock - (CONFIRMATIONS + 10));
+                for(let b= checkFrom; b <= lastBlock; b++){
+                    const storedHash = await getStoredBlockHash(b);
+                    if(!storedHash) continue
+                    const block = await publicClient.getBlock({
+                        blockNumber: BigInt(b)
+                    })
+                    if(!block) continue
+                    if(block.hash !== storedHash){
+                        console.log("reorg detected at block", b, "hashes:", block.hash, storedHash);
+                        await markOrderAsOrphaned(b);
+                        lastBlock = Math.max(0, b-1)
+                        await setLastProcessedBlock(lastBlock);
+                        break
+                    }
+                }
+            }
+
+            await new Promise((resolve)=> setTimeout(resolve, POLL_INTERVAL_MS));
+
+
+        }
+        catch(error){
+            console.log(error)
+            await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+    }
+}
+
+
+function setupShutdown() {
+  const stop = async () => {
+    running = false;
+    console.log("Shutting down hybrid indexer...");
+    try { await prisma.$disconnect(); } catch (e) {}
+    try { await redis.quit(); } catch (e) {}
+    if (ws) try { ws.close(); } catch (e) {}
+    process.exit(0);
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
+(async function start() {
+  setupShutdown();
+  console.log("Starting hybrid viem + prisma indexer...");
+
+  // init lastProcessedBlock if missing
+  lastProcessedBlock = await getLastProcessedBlock();
+  if (lastProcessedBlock == null) {
+    const latest = Number(await publicClient.getBlockNumber());
+    lastProcessedBlock = Math.max(0, latest - START_BLOCK_BACKOFF);
+    await setLastProcessedBlock(lastProcessedBlock);
+  }
+
+  // start WS subscription (best-effort) and poller as fallback + confirmations
+  connectWs();
+  pollerLoop().catch((err) => console.error("pollerLoop crashed", err));
+})();
