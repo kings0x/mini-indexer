@@ -13,3 +13,67 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+/**
+ * Models inferred from your code:
+ * - ProcessedEvent    (prisma.processedEvent)
+ * - IndexerMeta       (prisma.indexerMeta)
+ * - ProcessedBlock    (prisma.processedBlock)
+ * - Order             (prisma.order)
+ */
+
+model ProcessedEvent {
+  // used in alreadyProcessed/findUnique and markEventProcessed/create
+  eventId   String   @id // used as unique id in makeEventId(txHash, logIndex)
+  txHash    String
+  logIndex  Int
+  eventType String
+  createdAt DateTime @default(now())
+
+  @@index([txHash, logIndex], name: "idx_processed_event_tx_log")
+}
+
+model IndexerMeta {
+  // used to store last_processed_block (key/value)
+  key       String   @id // e.g. "last_processed_block"
+  value     String // stored as string in your code (you parse Number when reading)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProcessedBlock {
+  // stores blockNumber -> blockHash for reorg detection; used in upsert/findUnique/deleteMany
+  blockNumber Int      @id // used as unique key in upsert/findUnique/deleteMany
+  blockHash   String
+  processedAt DateTime @default(now()) // updated when block is processed (code uses `proccesedAt: new Date()` -> fix typo)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([blockHash], name: "idx_processed_block_hash")
+}
+
+enum Status {
+  open
+  filled
+  cancelled
+  invalid
+}
+
+model Order {
+  // fields used across update/updateMany/findMany and event publishing
+  orderHash   String   @id // primary identifier for an order (used in update where { orderHash })
+  txHash      String?
+  logIndex    Int?
+  blockNumber Int? // used for confirmations / orphaning queries (lte, gte)
+  status      Status?
+  isConfirmed Boolean  @default(false) // updated by markOrdersAsConfirmed
+  isOrphaned  Boolean  @default(false) // set by markOrderAsOrphaned
+  rawOrder    Json? // raw event payload (raw: {eventName, args}) — store as JSON
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // helpful indexes to support the queries in your code
+  @@index([blockNumber], name: "idx_order_blockNumber")
+  @@index([isConfirmed, isOrphaned], name: "idx_order_confirm_orphan")
+  @@index([txHash, logIndex], name: "idx_order_tx_log")
+}

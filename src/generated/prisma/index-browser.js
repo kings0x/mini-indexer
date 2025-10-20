@@ -120,9 +120,79 @@ exports.Prisma.TransactionIsolationLevel = makeStrictEnum({
   Serializable: 'Serializable'
 });
 
+exports.Prisma.ProcessedEventScalarFieldEnum = {
+  eventId: 'eventId',
+  txHash: 'txHash',
+  logIndex: 'logIndex',
+  eventType: 'eventType',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.IndexerMetaScalarFieldEnum = {
+  key: 'key',
+  value: 'value',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProcessedBlockScalarFieldEnum = {
+  blockNumber: 'blockNumber',
+  blockHash: 'blockHash',
+  processedAt: 'processedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.OrderScalarFieldEnum = {
+  orderHash: 'orderHash',
+  txHash: 'txHash',
+  logIndex: 'logIndex',
+  blockNumber: 'blockNumber',
+  status: 'status',
+  isConfirmed: 'isConfirmed',
+  isOrphaned: 'isOrphaned',
+  rawOrder: 'rawOrder',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SortOrder = {
+  asc: 'asc',
+  desc: 'desc'
+};
+
+exports.Prisma.NullableJsonNullValueInput = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull
+};
+
+exports.Prisma.QueryMode = {
+  default: 'default',
+  insensitive: 'insensitive'
+};
+
+exports.Prisma.JsonNullValueFilter = {
+  DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull,
+  AnyNull: Prisma.AnyNull
+};
+
+exports.Prisma.NullsOrder = {
+  first: 'first',
+  last: 'last'
+};
+exports.Status = exports.$Enums.Status = {
+  open: 'open',
+  filled: 'filled',
+  cancelled: 'cancelled',
+  invalid: 'invalid'
+};
 
 exports.Prisma.ModelName = {
-
+  ProcessedEvent: 'ProcessedEvent',
+  IndexerMeta: 'IndexerMeta',
+  ProcessedBlock: 'ProcessedBlock',
+  Order: 'Order'
 };
 
 /**

@@ -2,8 +2,9 @@ import { createPublicClient, decodeEventLog, http } from "viem";
 import WebSocket from "ws";
 import redis from "./config/redis.config";
 import { mainnet } from "viem/chains";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "./generated/prisma";
 import SeaportsABI from "./abis/settlement.abi";
+import type { Status } from "./generated/prisma";
 import {
     RPC_URL,
     WS_RPC_URL, 
@@ -14,9 +15,8 @@ import {
     BATCH_BLOCKS,
     POLL_INTERVAL_MS,
 } from "./config/env";
-import { eventNames } from "process";
-import { bigint, json, set, unknown } from "zod";
 import {parseBlockNumber} from "./lib/utils";
+import { is } from "zod/v4/locales";
 
 
 type updateDBFromEventTypes = {
@@ -24,7 +24,7 @@ type updateDBFromEventTypes = {
     txHash: string,
     logIndex: number,
     blockNumber: number,
-    status: string,
+    status: Status,
     raw: any
 }
 
@@ -118,7 +118,7 @@ async function storeProcessedBlockDetails(blockNumber: number, blockHash: string
         },
         update:{
             blockHash,
-            proccesedAt: new Date()
+            processedAt: new Date()
         }
     })
 }
@@ -160,13 +160,17 @@ async function markOrdersAsConfirmed(confirmationCutoffBlock: number) {
             blockNumber: {
                 lte: confirmationCutoffBlock
             }
+        },
+        data:{
+            isConfirmed: true
         }
     })
 
-    const confirmedOrders = await prisma.findMany({
+    const confirmedOrders = await prisma.order.findMany({
         where: {
             isConfirmed: true,
             isOrphaned: false,
+
             blockNumber: {
                 lte: confirmationCutoffBlock
             }
@@ -185,9 +189,12 @@ async function markOrdersAsConfirmed(confirmationCutoffBlock: number) {
     })
 
     for (let orders of confirmedOrders){
+        if(!orders){
+            break
+        }
         const order = {
             version: "1",
-            eventId: makeEventId(orders.txHash, orders.logIndex),
+            eventId: makeEventId(orders.txHash!, orders.logIndex!),
             source: "indexer",
             eventType: `order:${orders.status}`,
             txHash: orders.txHash,
@@ -205,7 +212,7 @@ async function markOrdersAsConfirmed(confirmationCutoffBlock: number) {
 }
 
 async function markOrderAsOrphaned(fromBlock: number) {
-    await prisma.order.findMany({
+    await prisma.order.updateMany({
         where:{
             blockNumber:{
                 gte: fromBlock
@@ -223,21 +230,21 @@ async function markOrderAsOrphaned(fromBlock: number) {
         where:{
             blockNumber:{
                 gte: fromBlock
-            },
-            select:{
-                orderHash: true,
-                txHash: true,
-                logIndex: true,
-                blockNumber: true,
-                status: true
             }
+        },
+        select:{
+            orderHash: true,
+            txHash: true,
+            logIndex: true,
+            blockNumber: true,
+            status: true
         }
     })
 
     for (let orders of orphanedOrders){
         const order = {
             version: "1",
-            eventId: makeEventId(orders.txHash, orders.logIndex),
+            eventId: makeEventId(orders.txHash!, orders.logIndex!),
             source: "indexer",
             eventType: `order:orphaned`,
             txHash: orders.txHash,
@@ -319,7 +326,7 @@ async function processBlockRange(from: number, to: number){
             const taker = args.taker ? String(args.taker) : null;
             const price = args.price ? Number(args.price) : null;
 
-            const status = eventName === "OrderCancelled" ? "cancelled" : eventName === "OrderFulfilled" ? "filled" : "unknown";
+            const status: Status = eventName === "OrderCancelled" ? "cancelled" : eventName === "OrderFulfilled" ? "filled" : "invalid";
 
             await updateOrderFromEvent({
                 orderHash,
@@ -638,3 +645,6 @@ function setupShutdown() {
   connectWs();
   pollerLoop().catch((err) => console.error("pollerLoop crashed", err));
 })();
+
+//TODO
+//populate the envs and create/adjust the schema for this project

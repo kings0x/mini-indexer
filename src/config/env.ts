@@ -39,8 +39,6 @@ const envSchema = z.object({
   CONTRACT_ADDRESS: z.string(),
   REDIS_URL: z.string(),
   STREAM_KEY: z.string(),
-
-  CONFIRMATIONS: z.string().transform(Number),
   POLL_INTERVAL_MS: z.string().transform(Number),
   START_BLOCK_BACKOFF: z.string().transform(Number),
   BATCH_BLOCKS: z.string().transform(Number),
@@ -61,7 +59,6 @@ export const {
   CONTRACT_ADDRESS,
   REDIS_URL,
   STREAM_KEY,
-  CONFIRMATIONS,
   POLL_INTERVAL_MS,
   START_BLOCK_BACKOFF,
   BATCH_BLOCKS,
